@@ -5,6 +5,9 @@ name: Build unsigned iOS ipa
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - ios-keyboard-fix
 
 env:
   RUST_VERSION: "1.75"
