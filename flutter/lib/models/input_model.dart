@@ -897,7 +897,12 @@ class InputModel {
     if (isMobile) {
       // Do not use map mode if mobile -> Android. Android does not support map mode for now.
       // Because simulating the physical key events(uhid) which requires root permission is not supported.
-      if (peerPlatform != kPeerPlatformAndroid) {
+      // Also require the peer to support map mode (e.g. peers older than 1.2.0
+      // do not). Otherwise Rust drops the key on mobile, so fall back to the
+      // legacy path below.
+      if (peerPlatform != kPeerPlatformAndroid &&
+          bind.sessionIsKeyboardModeSupported(
+              sessionId: sessionId, mode: kKeyMapMode)) {
         if (isIOS) {
           isMobileAndMapMode = true;
         } else {
