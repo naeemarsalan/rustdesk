@@ -583,8 +583,63 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     );
   }
 
-  bool _handleLocalKeyEvent(KeyEvent event) => handleMobileLocalKeyEvent(event,
-      remoteFocused: _physicalFocusNode.hasPrimaryFocus, inputModel: inputModel);
+  // DEBUG ONLY, not for upstream.
+  DateTime _debugLastKeyInfo = DateTime.fromMillisecondsSinceEpoch(0);
+  bool _debugFirstKeyInfoShown = false;
+  void _debugShowKeyInfo(KeyEvent event) {
+    if (event is! KeyDownEvent) return;
+    final primary = FocusManager.instance.primaryFocus;
+    final String focus;
+    if (primary == null) {
+      focus = 'null';
+    } else if (primary == FocusManager.instance.rootScope) {
+      focus = 'rootScope';
+    } else if (_physicalFocusNode.hasPrimaryFocus) {
+      focus = 'remote';
+    } else {
+      focus = 'other(${primary.runtimeType} ${primary.debugLabel})';
+    }
+    final now = DateTime.now();
+    final lost = focus != 'remote';
+    if (_debugFirstKeyInfoShown &&
+        (!lost || now.difference(_debugLastKeyInfo).inSeconds < 4)) {
+      return;
+    }
+    _debugFirstKeyInfoShown = true;
+    _debugLastKeyInfo = now;
+    final mapSupported = bind.sessionIsKeyboardModeSupported(
+        sessionId: sessionId, mode: kKeyMapMode);
+    final pi = gFFI.ffiModel.pi;
+    bind.sessionGetKeyboardMode(sessionId: sessionId).then((mode) {
+      showToast(
+          'DEBUG focus=$focus mode=$mode mapSupported=$mapSupported '
+          'peer=${pi.platform} ${pi.version} showEdit=$_showEdit',
+          timeout: const Duration(seconds: 8),
+          alignment: const Alignment(0.0, -0.6));
+    });
+  }
+
+  bool _handleLocalKeyEvent(KeyEvent event) {
+    _debugShowKeyInfo(event);
+    _restorePhysicalKeyboardFocusIfLost();
+    return handleMobileLocalKeyEvent(event,
+        remoteFocused: _physicalFocusNode.hasPrimaryFocus,
+        inputModel: inputModel);
+  }
+
+  // iOS: with a hardware keyboard attached the soft keyboard never shows, so
+  // the hide-keyboard workaround in `onSoftKeyboardChanged` never runs. If
+  // focus was dropped (nothing focused at all), hardware keys would go nowhere.
+  // Only reclaim focus when no widget owns it, so dialogs, chat and the soft
+  // keyboard text field are never robbed.
+  void _restorePhysicalKeyboardFocusIfLost() {
+    if (!isIOS || !mounted || _showEdit) return;
+    if (gFFI.ffiModel.pi.isSet.isFalse) return;
+    final primary = FocusManager.instance.primaryFocus;
+    if (primary == null || primary == FocusManager.instance.rootScope) {
+      _physicalFocusNode.requestFocus();
+    }
+  }
 
   Widget getRawPointerAndKeyBody(Widget child) {
     final ffiModel = Provider.of<FfiModel>(context);
