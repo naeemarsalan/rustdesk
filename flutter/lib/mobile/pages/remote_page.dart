@@ -583,26 +583,8 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     );
   }
 
-  bool _handleLocalKeyEvent(KeyEvent event) {
-    _restorePhysicalKeyboardFocusIfLost();
-    return handleMobileLocalKeyEvent(event,
-        remoteFocused: _physicalFocusNode.hasPrimaryFocus,
-        inputModel: inputModel);
-  }
-
-  // iOS: with a hardware keyboard attached the soft keyboard never shows, so
-  // the hide-keyboard workaround in `onSoftKeyboardChanged` never runs. If
-  // focus was dropped (nothing focused at all), hardware keys would go nowhere.
-  // Only reclaim focus when no widget owns it, so dialogs, chat and the soft
-  // keyboard text field are never robbed.
-  void _restorePhysicalKeyboardFocusIfLost() {
-    if (!isIOS || !mounted || _showEdit) return;
-    if (gFFI.ffiModel.pi.isSet.isFalse) return;
-    final primary = FocusManager.instance.primaryFocus;
-    if (primary == null || primary == FocusManager.instance.rootScope) {
-      _physicalFocusNode.requestFocus();
-    }
-  }
+  bool _handleLocalKeyEvent(KeyEvent event) => handleMobileLocalKeyEvent(event,
+      remoteFocused: _physicalFocusNode.hasPrimaryFocus, inputModel: inputModel);
 
   Widget getRawPointerAndKeyBody(Widget child) {
     final ffiModel = Provider.of<FfiModel>(context);

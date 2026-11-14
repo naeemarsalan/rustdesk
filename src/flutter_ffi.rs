@@ -623,11 +623,8 @@ pub fn session_handle_flutter_key_event(
 ) {
     if let Some(session) = sessions::get_session_by_session_id(&session_id) {
         let keyboard_mode = session.get_keyboard_mode();
-        // Mobile clients cannot encode legacy key events in Rust
-        // (`event_to_key_events` returns nothing for legacy mode there), and
-        // they have no UI to leave legacy mode. Flutter only takes this path
-        // on mobile when the peer supports map mode, so use it instead of
-        // silently dropping the key.
+        // `event_to_key_events` returns nothing for legacy mode on mobile,
+        // so the key would be dropped. Send it as map mode instead.
         #[cfg(any(target_os = "android", target_os = "ios"))]
         let keyboard_mode = if keyboard_mode == "legacy"
             && session.is_keyboard_mode_supported("map".to_owned())
