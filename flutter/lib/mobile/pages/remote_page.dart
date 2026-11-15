@@ -609,7 +609,11 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     });
   }
 
+  Timer? _debugTimer;
   Widget _debugBanner() {
+    _debugTimer ??= Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {});
+    });
     final pi = gFFI.ffiModel.pi;
     var mapSupported = 'n/a';
     if (pi.isSet.isTrue) {
@@ -629,7 +633,10 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
             padding: const EdgeInsets.all(6),
             child: Text(
               'DEBUG peer=${pi.platform} ${pi.version} '
-              'mapSupported=$mapSupported $_debugKeyLine',
+              'mapSupported=$mapSupported $_debugKeyLine\n'
+              'panzoom=${inputModel.debugPanZoomCount} '
+              'signal=${inputModel.debugSignalCount} '
+              'last=${inputModel.debugLastScroll}',
               style: const TextStyle(color: Colors.yellow, fontSize: 14),
             ),
           ),

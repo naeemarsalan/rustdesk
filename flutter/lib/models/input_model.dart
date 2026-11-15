@@ -494,6 +494,13 @@ class InputModel {
   String get id => parent.target?.id ?? '';
   String? get peerPlatform => parent.target?.ffiModel.pi.platform;
   String get peerVersion => parent.target?.ffiModel.pi.version ?? '';
+  // Peers older than 1.2.0 ignore trackpad events, send wheel steps instead.
+  bool get _trackpadAsWheel =>
+      peerVersion.isNotEmpty && versionCmp(peerVersion, '1.2.0') < 0;
+  // DEBUG ONLY, not for upstream.
+  int debugPanZoomCount = 0;
+  int debugSignalCount = 0;
+  String debugLastScroll = '-';
   bool get isViewOnly => parent.target!.ffiModel.viewOnly;
   bool get showMyCursor => parent.target!.ffiModel.showMyCursor;
   double get devicePixelRatio => parent.target!.canvasModel.devicePixelRatio;
@@ -1646,6 +1653,7 @@ class InputModel {
 
   // https://docs.flutter.dev/release/breaking-changes/trackpad-gestures
   void onPointerPanZoomUpdate(PointerPanZoomUpdateEvent e) {
+    debugPanZoomCount++;
     if (isViewOnly) return;
     if (isViewCamera) return;
     if (peerPlatform != kPeerPlatformAndroid) {
@@ -1671,7 +1679,8 @@ class InputModel {
 
     var x = delta.dx.toInt();
     var y = delta.dy.toInt();
-    if (peerPlatform == kPeerPlatformLinux) {
+    final asWheel = _trackpadAsWheel;
+    if (peerPlatform == kPeerPlatformLinux || asWheel) {
       _trackpadScrollUnsent += (delta * _trackpadAdjustPeerLinux);
       x = _trackpadScrollUnsent.dx.truncate();
       y = _trackpadScrollUnsent.dy.truncate();
@@ -1692,11 +1701,21 @@ class InputModel {
             Offset(x.toDouble(), y.toDouble()));
       } else {
         if (isViewCamera) return;
-        bind.sessionSendMouse(
-            sessionId: sessionId,
-            msg: '{"type": "trackpad", "x": "$x", "y": "$y"}');
+        debugLastScroll = '${asWheel ? "wheel" : "trackpad"} $x,$y';
+        _sendTrackpadScroll(x, y);
       }
     }
+  }
+
+  void _sendTrackpadScroll(int x, int y) {
+    var type = 'trackpad';
+    if (_trackpadAsWheel) {
+      type = 'wheel';
+      // Windows peers older than 1.2.0 scroll the other way horizontally.
+      if (peerPlatform == kPeerPlatformWindows) x = -x;
+    }
+    bind.sessionSendMouse(
+        sessionId: sessionId, msg: '{"type": "$type", "x": "$x", "y": "$y"}');
   }
 
   Offset _filterTrackpadDeltaAxis(Offset delta) {
@@ -1737,7 +1756,8 @@ class InputModel {
       // Try set delta (x,y) and delay.
       var dx = x.toInt();
       var dy = y.toInt();
-      if (parent.target?.ffiModel.pi.platform == kPeerPlatformLinux) {
+      if (parent.target?.ffiModel.pi.platform == kPeerPlatformLinux ||
+          _trackpadAsWheel) {
         dx = (x * _trackpadAdjustPeerLinux).toInt();
         dy = (y * _trackpadAdjustPeerLinux).toInt();
       }
@@ -1749,9 +1769,7 @@ class InputModel {
         return;
       }
 
-      bind.sessionSendMouse(
-          sessionId: sessionId,
-          msg: '{"type": "trackpad", "x": "$dx", "y": "$dy"}');
+      _sendTrackpadScroll(dx, dy);
       _scheduleFling(x, y, delay);
     });
   }
@@ -1975,6 +1993,7 @@ class InputModel {
   /// scroll deltas that are independent of cursor position. Games and 3D applications
   /// handle scroll events the same way regardless of mouse mode.
   void onPointerSignalImage(PointerSignalEvent e) {
+    debugSignalCount++;
     if (isViewOnly) return;
     if (isViewCamera) return;
     if (e is PointerScrollEvent) {
