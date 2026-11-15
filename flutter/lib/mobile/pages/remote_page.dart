@@ -584,9 +584,9 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   }
 
   // DEBUG ONLY, not for upstream.
-  DateTime _debugLastKeyInfo = DateTime.fromMillisecondsSinceEpoch(0);
-  bool _debugFirstKeyInfoShown = false;
-  void _debugShowKeyInfo(KeyEvent event) {
+  int _debugKeyCount = 0;
+  String _debugKeyLine = 'no key received yet';
+  void _debugRecordKey(KeyEvent event) {
     if (event is! KeyDownEvent) return;
     final primary = FocusManager.instance.primaryFocus;
     final String focus;
@@ -599,50 +599,56 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     } else {
       focus = 'other(${primary.runtimeType} ${primary.debugLabel})';
     }
-    final now = DateTime.now();
-    final lost = focus != 'remote';
-    if (_debugFirstKeyInfoShown &&
-        (!lost || now.difference(_debugLastKeyInfo).inSeconds < 4)) {
-      return;
-    }
-    _debugFirstKeyInfoShown = true;
-    _debugLastKeyInfo = now;
-    final mapSupported = bind.sessionIsKeyboardModeSupported(
-        sessionId: sessionId, mode: kKeyMapMode);
-    final pi = gFFI.ffiModel.pi;
+    _debugKeyCount++;
+    final count = _debugKeyCount;
     bind.sessionGetKeyboardMode(sessionId: sessionId).then((mode) {
-      showToast(
-          'DEBUG focus=$focus mode=$mode mapSupported=$mapSupported '
-          'peer=${pi.platform} ${pi.version} showEdit=$_showEdit',
-          timeout: const Duration(seconds: 8),
-          alignment: const Alignment(0.0, -0.6));
+      if (!mounted) return;
+      setState(() {
+        _debugKeyLine = 'keys=$count focus=$focus mode=$mode';
+      });
     });
   }
 
+  Widget _debugBanner() {
+    final pi = gFFI.ffiModel.pi;
+    var mapSupported = 'n/a';
+    if (pi.isSet.isTrue) {
+      mapSupported = bind
+          .sessionIsKeyboardModeSupported(
+              sessionId: sessionId, mode: kKeyMapMode)
+          .toString();
+    }
+    return Positioned(
+      top: 60,
+      left: 0,
+      right: 0,
+      child: IgnorePointer(
+        child: Center(
+          child: Container(
+            color: Colors.black87,
+            padding: const EdgeInsets.all(6),
+            child: Text(
+              'DEBUG peer=${pi.platform} ${pi.version} '
+              'mapSupported=$mapSupported $_debugKeyLine',
+              style: const TextStyle(color: Colors.yellow, fontSize: 14),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   bool _handleLocalKeyEvent(KeyEvent event) {
-    _debugShowKeyInfo(event);
-    _restorePhysicalKeyboardFocusIfLost();
+    _debugRecordKey(event);
     return handleMobileLocalKeyEvent(event,
         remoteFocused: _physicalFocusNode.hasPrimaryFocus,
         inputModel: inputModel);
   }
 
-  // iOS: with a hardware keyboard attached the soft keyboard never shows, so
-  // the hide-keyboard workaround in `onSoftKeyboardChanged` never runs. If
-  // focus was dropped (nothing focused at all), hardware keys would go nowhere.
-  // Only reclaim focus when no widget owns it, so dialogs, chat and the soft
-  // keyboard text field are never robbed.
-  void _restorePhysicalKeyboardFocusIfLost() {
-    if (!isIOS || !mounted || _showEdit) return;
-    if (gFFI.ffiModel.pi.isSet.isFalse) return;
-    final primary = FocusManager.instance.primaryFocus;
-    if (primary == null || primary == FocusManager.instance.rootScope) {
-      _physicalFocusNode.requestFocus();
-    }
-  }
-
   Widget getRawPointerAndKeyBody(Widget child) {
     final ffiModel = Provider.of<FfiModel>(context);
+    // DEBUG ONLY, not for upstream.
+    child = Stack(fit: StackFit.expand, children: [child, _debugBanner()]);
     return RawPointerMouseRegion(
       cursor: ffiModel.keyboard ? SystemMouseCursors.none : MouseCursor.defer,
       inputModel: inputModel,

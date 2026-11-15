@@ -897,7 +897,9 @@ class InputModel {
     if (isMobile) {
       // Do not use map mode if mobile -> Android. Android does not support map mode for now.
       // Because simulating the physical key events(uhid) which requires root permission is not supported.
-      if (peerPlatform != kPeerPlatformAndroid) {
+      if (peerPlatform != kPeerPlatformAndroid &&
+          bind.sessionIsKeyboardModeSupported(
+              sessionId: sessionId, mode: kKeyMapMode)) {
         if (isIOS) {
           isMobileAndMapMode = true;
         } else {
