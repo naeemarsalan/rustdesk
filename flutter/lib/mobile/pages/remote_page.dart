@@ -636,7 +636,8 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
               'mapSupported=$mapSupported $_debugKeyLine\n'
               'panzoom=${inputModel.debugPanZoomCount} '
               'signal=${inputModel.debugSignalCount} '
-              'last=${inputModel.debugLastScroll}',
+              'last=${inputModel.debugLastScroll} '
+              'focusRestored=$_debugFocusRestored',
               style: const TextStyle(color: Colors.yellow, fontSize: 14),
             ),
           ),
@@ -645,8 +646,22 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     );
   }
 
+  // Keyboard focus can end up on a scope that encloses the remote view
+  // instead of on the view itself. Key events then never reach it.
+  int _debugFocusRestored = 0;
+  void _restorePhysicalKeyboardFocusIfLost() {
+    if (!isIOS || _showEdit) return;
+    final primary = FocusManager.instance.primaryFocus;
+    if (primary == _physicalFocusNode) return;
+    if (primary == null || _physicalFocusNode.ancestors.contains(primary)) {
+      _debugFocusRestored++;
+      _physicalFocusNode.requestFocus();
+    }
+  }
+
   bool _handleLocalKeyEvent(KeyEvent event) {
     _debugRecordKey(event);
+    _restorePhysicalKeyboardFocusIfLost();
     return handleMobileLocalKeyEvent(event,
         remoteFocused: _physicalFocusNode.hasPrimaryFocus,
         inputModel: inputModel);
