@@ -187,6 +187,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   @override
   Future<void> dispose() async {
     HardwareKeyboard.instance.removeHandler(_handleLocalKeyEvent);
+    _stopKeyRepeat();
     WidgetsBinding.instance.removeObserver(this);
     // Close the session up-front. `gFFI.close()` below only calls `sessionClose`
     // after several awaits (canvas save, image update, the `enable_soft_keyboard`
@@ -225,6 +226,9 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) {
+      _stopKeyRepeat();
+    }
     if (state == AppLifecycleState.resumed) {
       trySyncClipboard();
     }
@@ -659,9 +663,74 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     }
   }
 
+  // iOS reports a held hardware key as one down and one up, with no repeat
+  // events in between, and the peer does not repeat injected keys either.
+  Timer? _keyRepeatTimer;
+  PhysicalKeyboardKey? _keyRepeatKey;
+  static const _keyRepeatDelay = Duration(milliseconds: 400);
+  static const _keyRepeatInterval = Duration(milliseconds: 40);
+  static const _keyRepeatExcluded = [
+    PhysicalKeyboardKey.controlLeft,
+    PhysicalKeyboardKey.controlRight,
+    PhysicalKeyboardKey.altLeft,
+    PhysicalKeyboardKey.altRight,
+    PhysicalKeyboardKey.shiftLeft,
+    PhysicalKeyboardKey.shiftRight,
+    PhysicalKeyboardKey.metaLeft,
+    PhysicalKeyboardKey.metaRight,
+    PhysicalKeyboardKey.capsLock,
+    PhysicalKeyboardKey.escape,
+  ];
+
+  void _stopKeyRepeat() {
+    _keyRepeatTimer?.cancel();
+    _keyRepeatTimer = null;
+    _keyRepeatKey = null;
+  }
+
+  void _updateKeyRepeat(KeyEvent event) {
+    if (!isIOS) return;
+    if (event is KeyUpEvent) {
+      if (event.physicalKey == _keyRepeatKey) _stopKeyRepeat();
+      return;
+    }
+    _stopKeyRepeat();
+    // The key up of a key pressed together with Command may never arrive.
+    if (event is! KeyDownEvent ||
+        _showEdit ||
+        _keyRepeatExcluded.contains(event.physicalKey) ||
+        HardwareKeyboard.instance.isMetaPressed) {
+      return;
+    }
+    final repeat = KeyRepeatEvent(
+      physicalKey: event.physicalKey,
+      logicalKey: event.logicalKey,
+      character: event.character,
+      timeStamp: event.timeStamp,
+    );
+    void tick() {
+      if (!mounted ||
+          !_physicalFocusNode.hasPrimaryFocus ||
+          !HardwareKeyboard.instance.physicalKeysPressed
+              .contains(repeat.physicalKey)) {
+        _stopKeyRepeat();
+        return;
+      }
+      inputModel.handleKeyEvent(repeat);
+    }
+
+    _keyRepeatKey = event.physicalKey;
+    _keyRepeatTimer = Timer(_keyRepeatDelay, () {
+      tick();
+      if (_keyRepeatKey == null) return;
+      _keyRepeatTimer = Timer.periodic(_keyRepeatInterval, (_) => tick());
+    });
+  }
+
   bool _handleLocalKeyEvent(KeyEvent event) {
     _debugRecordKey(event);
     _restorePhysicalKeyboardFocusIfLost();
+    _updateKeyRepeat(event);
     return handleMobileLocalKeyEvent(event,
         remoteFocused: _physicalFocusNode.hasPrimaryFocus,
         inputModel: inputModel);
