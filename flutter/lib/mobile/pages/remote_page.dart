@@ -587,78 +587,13 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     );
   }
 
-  // DEBUG ONLY, not for upstream.
-  int _debugKeyCount = 0;
-  String _debugKeyLine = 'no key received yet';
-  void _debugRecordKey(KeyEvent event) {
-    if (event is! KeyDownEvent) return;
-    final primary = FocusManager.instance.primaryFocus;
-    final String focus;
-    if (primary == null) {
-      focus = 'null';
-    } else if (primary == FocusManager.instance.rootScope) {
-      focus = 'rootScope';
-    } else if (_physicalFocusNode.hasPrimaryFocus) {
-      focus = 'remote';
-    } else {
-      focus = 'other(${primary.runtimeType} ${primary.debugLabel})';
-    }
-    _debugKeyCount++;
-    final count = _debugKeyCount;
-    bind.sessionGetKeyboardMode(sessionId: sessionId).then((mode) {
-      if (!mounted) return;
-      setState(() {
-        _debugKeyLine = 'keys=$count focus=$focus mode=$mode';
-      });
-    });
-  }
-
-  Timer? _debugTimer;
-  Widget _debugBanner() {
-    _debugTimer ??= Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) setState(() {});
-    });
-    final pi = gFFI.ffiModel.pi;
-    var mapSupported = 'n/a';
-    if (pi.isSet.isTrue) {
-      mapSupported = bind
-          .sessionIsKeyboardModeSupported(
-              sessionId: sessionId, mode: kKeyMapMode)
-          .toString();
-    }
-    return Positioned(
-      top: 60,
-      left: 0,
-      right: 0,
-      child: IgnorePointer(
-        child: Center(
-          child: Container(
-            color: Colors.black87,
-            padding: const EdgeInsets.all(6),
-            child: Text(
-              'DEBUG peer=${pi.platform} ${pi.version} '
-              'mapSupported=$mapSupported $_debugKeyLine\n'
-              'panzoom=${inputModel.debugPanZoomCount} '
-              'signal=${inputModel.debugSignalCount} '
-              'last=${inputModel.debugLastScroll} '
-              'focusRestored=$_debugFocusRestored',
-              style: const TextStyle(color: Colors.yellow, fontSize: 14),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
   // Keyboard focus can end up on a scope that encloses the remote view
   // instead of on the view itself. Key events then never reach it.
-  int _debugFocusRestored = 0;
   void _restorePhysicalKeyboardFocusIfLost() {
     if (!isIOS || _showEdit) return;
     final primary = FocusManager.instance.primaryFocus;
     if (primary == _physicalFocusNode) return;
     if (primary == null || _physicalFocusNode.ancestors.contains(primary)) {
-      _debugFocusRestored++;
       _physicalFocusNode.requestFocus();
     }
   }
@@ -728,7 +663,6 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   }
 
   bool _handleLocalKeyEvent(KeyEvent event) {
-    _debugRecordKey(event);
     _restorePhysicalKeyboardFocusIfLost();
     _updateKeyRepeat(event);
     return handleMobileLocalKeyEvent(event,
@@ -738,8 +672,6 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
 
   Widget getRawPointerAndKeyBody(Widget child) {
     final ffiModel = Provider.of<FfiModel>(context);
-    // DEBUG ONLY, not for upstream.
-    child = Stack(fit: StackFit.expand, children: [child, _debugBanner()]);
     return RawPointerMouseRegion(
       cursor: ffiModel.keyboard ? SystemMouseCursors.none : MouseCursor.defer,
       inputModel: inputModel,

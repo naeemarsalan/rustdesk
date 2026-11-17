@@ -497,10 +497,6 @@ class InputModel {
   // Peers older than 1.2.0 ignore trackpad events, send wheel steps instead.
   bool get _trackpadAsWheel =>
       peerVersion.isNotEmpty && versionCmp(peerVersion, '1.2.0') < 0;
-  // DEBUG ONLY, not for upstream.
-  int debugPanZoomCount = 0;
-  int debugSignalCount = 0;
-  String debugLastScroll = '-';
   bool get isViewOnly => parent.target!.ffiModel.viewOnly;
   bool get showMyCursor => parent.target!.ffiModel.showMyCursor;
   double get devicePixelRatio => parent.target!.canvasModel.devicePixelRatio;
@@ -971,7 +967,7 @@ class InputModel {
       _restoreFlutterShortcutModifiers(e, mapMode: false);
       _trackFlutterShortcutKey(e.physicalKey, e.logicalKey,
           down: e is KeyDownEvent, up: e is KeyUpEvent);
-      legacyKeyboardMode(e);
+      legacyKeyboardMode(e, capsLock: iosCapsLock);
     }
 
     return KeyEventResult.handled;
@@ -1327,22 +1323,28 @@ class InputModel {
     inputKey(label, down: down, press: press ?? false);
   }
 
-  void legacyKeyboardMode(KeyEvent e) {
+  void legacyKeyboardMode(KeyEvent e, {bool capsLock = false}) {
     if (e is KeyDownEvent) {
-      sendKey(e, down: true);
+      sendKey(e, down: true, capsLock: capsLock);
     } else if (e is KeyRepeatEvent) {
-      sendKey(e, press: true);
+      sendKey(e, press: true, capsLock: capsLock);
     } else if (e is KeyUpEvent) {
       sendKey(e);
     }
   }
 
-  void sendKey(KeyEvent e, {bool? down, bool? press}) {
+  void sendKey(KeyEvent e, {bool? down, bool? press, bool capsLock = false}) {
     // for maximum compatibility
     final label = physicalKeyMap[e.physicalKey.usbHidUsage] ??
         logicalKeyMap[e.logicalKey.keyId] ??
         e.logicalKey.keyLabel;
+    // The legacy path carries no lock state and the peer turns Caps Lock off
+    // on every key, so send the letter shifted instead.
+    final shiftForCaps = capsLock && !ctrl && !alt && !command;
+    final savedShift = shift;
+    if (shiftForCaps) shift = true;
     inputKey(label, down: down, press: press ?? false);
+    if (shiftForCaps) shift = savedShift;
   }
 
   /// Send key stroke event.
@@ -1653,7 +1655,6 @@ class InputModel {
 
   // https://docs.flutter.dev/release/breaking-changes/trackpad-gestures
   void onPointerPanZoomUpdate(PointerPanZoomUpdateEvent e) {
-    debugPanZoomCount++;
     if (isViewOnly) return;
     if (isViewCamera) return;
     if (peerPlatform != kPeerPlatformAndroid) {
@@ -1701,7 +1702,6 @@ class InputModel {
             Offset(x.toDouble(), y.toDouble()));
       } else {
         if (isViewCamera) return;
-        debugLastScroll = '${asWheel ? "wheel" : "trackpad"} $x,$y';
         _sendTrackpadScroll(x, y);
       }
     }
@@ -1993,7 +1993,6 @@ class InputModel {
   /// scroll deltas that are independent of cursor position. Games and 3D applications
   /// handle scroll events the same way regardless of mouse mode.
   void onPointerSignalImage(PointerSignalEvent e) {
-    debugSignalCount++;
     if (isViewOnly) return;
     if (isViewCamera) return;
     if (e is PointerScrollEvent) {
